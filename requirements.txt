@@ -1,2 +1,2 @@
-import telegram
-import pytesseract
+telegram
+pytesseract
