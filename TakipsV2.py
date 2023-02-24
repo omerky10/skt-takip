@@ -1,164 +1,123 @@
+
 import tkinter as tk
+from tkinter import messagebox
 import tkinter.ttk as ttk
-import time
+import datetime
 import telegram
-import cv2
-import pytesseract
-import sqlite3
-import pandas as pd
 
+class Product:
+    def __init__(self, name, start_date, end_date):
+        self.name = name
+        self.start_date = start_date
+        self.end_date = end_date
 
-class Application(tk.Tk):
-    def __init__(self):
-        super().__init__()
-
-        self.title("Set Takip Sistemi")
-        self.geometry("500x500")
-
-        self.tree = ttk.Treeview(self, columns=(
-            "start_date", "end_date", "status"))
-        self.tree.heading("#0", text="Ürün İsmi")
-        self.tree.heading("start_date", text="Başlangıç Tarihi")
-        self.tree.heading("end_date", text="Bitiş Tarihi")
-        self.tree.heading("status", text="Durum")
-        self.tree.pack(fill=tk.BOTH, expand=True)
-        self.name_entry = tk.Entry(self, width=20)
-        self.add_entry = tk.Entry(self, width=20)
-        self.end_entry = tk.Entry(self, width=20)
-
-        datepicker = ttk.Button(self, text="Tarih Seç",
-                                command=self.select_date)
-        datepicker.pack()
-
-        add_button = ttk.Button(self, text="Ekle", command=self.add_product)
-        add_button.pack()
-
-        delete_button = ttk.Button(
-            self, text="Sil", command=self.delete_product)
-        delete_button.pack()
-
-        edit_button = ttk.Button(self, text="Düzenle",
-                                 command=self.edit_product)
-        edit_button.pack()
-
+class Application(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.master = master
+        self.pack()
+        self.create_widgets()
         self.products = []
-        self.timer = None
+        self.check_expiration()
 
-        self.telegram_bot = telegram.Bot(
-            token="6289548429:AAFcVzfljxgtHZR7DDlEjo4fDNlVPB4qMp4")
-        self.telegram_chat_id = "-1001814445707"
-
-        self.conn = sqlite3.connect("products.db")
-        self.cursor = self.conn.cursor()
-
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            start_date TEXT,
-            end_date TEXT,
-            status TEXT
-        )
-        """)
-        self.conn.commit()
-
-        self.load_data()
-
-    def select_date(self):
-        pass  # datepicker implementation
+    def create_widgets(self):
+        self.product_name_label = tk.Label(self, text="Product Name")
+        self.product_name_label.pack()
+        
+        self.product_name = tk.StringVar()
+        self.product_name_entry = tk.Entry(self, textvariable=self.product_name)
+        self.product_name_entry.pack()
+        
+        self.start_date_label = tk.Label(self, text="Start Date (YYYY-MM-DD)")
+        self.start_date_label.pack()
+        
+        self.start_date = tk.StringVar()
+        self.start_date_entry = tk.Entry(self, textvariable=self.start_date)
+        self.start_date_entry.pack()
+        
+        self.end_date_label = tk.Label(self, text="End Date (YYYY-MM-DD)")
+        self.end_date_label.pack()
+        
+        self.end_date = tk.StringVar()
+        self.end_date_entry = tk.Entry(self, textvariable=self.end_date)
+        self.end_date_entry.pack()
+        
+        self.add_product_button = tk.Button(self, text="ADD", command=self.add_product)
+        self.add_product_button.pack()
+        
+        self.tree = ttk.Treeview(self, columns=("Start Date", "End Date", "Status"))
+        self.tree.heading("#0", text="Product Name")
+        self.tree.heading("Start Date", text="Start Date")
+        self.tree.heading("End Date", text="End Date")
+        self.tree.heading("Status", text="Status")
+        self.tree.column("#0", stretch=tk.YES)
+        self.tree.column("Start Date", stretch=tk.YES)
+        self.tree.column("End Date", stretch=tk.YES)
+        self.tree.column("Status", stretch=tk.YES)
+        self.tree.pack()
+        self.delete_product_button = tk.Button(self, text="DELETE", command=self.delete_product)
+        self.delete_product_button.pack()
+        self.edit_product_button = tk.Button(self, text="EDIT", command=self.edit_product)
+        self.edit_product_button.pack()
 
     def add_product(self):
-        name = self.name_entry.get()
-        start_date = self.start_entry.get()
-        end_date = self.end_entry.get()
-
-        self.cursor.execute(
-            "INSERT INTO products (name, start_date, end_date) VALUES (?, ?, ?)", (name, start_date, end_date))
-        self.conn.commit()
-
-        self.tree.insert("", "end", text=name, values=(
-            start_date, end_date, "Active"))
-        self.start_timer(end_date, name)
-
+        name = self.product_name.get()
+        start = self.start_date.get()
+        end = self.end_date.get()
+        try:
+            datetime.datetime.strptime(start, '%Y-%m-%d')
+            datetime.datetime.strptime(end, '%Y-%m-%d')
+        except ValueError:
+            messagebox.showerror("Error", "Incorrect date format. Use YYYY-MM-DD")
+            return
+        if not name or not start or not end:
+            messagebox.showerror("Error", "All fields are required")
+            return
+        self.products.append(Product(name, start, end))
+        self.tree.insert("", "end", text=name, values=(start, end, "Not expired"))
+        self.product_name.set("")
+        self.start_date.set("")
+        self.end_date.set("")
     def delete_product(self):
-        selected = self.tree.selection()
-        for item in selected:
-            self.tree.delete(item)
-            name = self.tree.item(item, "text")
-            self.cursor.execute("DELETE FROM products WHERE name=?", (name,))
-            self.conn.commit()
-
-            for product in self.products:
-                if product["name"] == name:
-                    self.products.remove(product)
-                    break
-
-            if self.timer:
-                self.after_cancel(self.timer)
-
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "No product selected")
+            return
+        name = self.tree.item(selected_item)["text"]
+        for product in self.products:
+            if product.name == name:
+                self.products.remove(product)
+                break
+        self.tree.delete(selected_item)
     def edit_product(self):
-        selected_item = self.tree.selection()[0]
-        name = self.name_entry.get()
-        start_date = self.start_entry.get()
-        end_date = self.end_entry.get()
+        selected_item = self.tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "No product selected")
+            return
+        name = self.tree.item(selected_item)["text"]
+        for product in self.products:
+            if product.name == name:
+                self.product_name.set(product.name)
+                self.start_date.set(product.start_date)
+                self.end_date.set(product.end_date)
+                self.products.remove(product)
+                self.tree.delete(selected_item)
+                break
 
-        self.cursor.execute("UPDATE products SET name=?, start_date=?, end_date=? WHERE name=?",
-                            (name, start_date, end_date, self.tree.item(selected_item, "text")))
-        self.conn.commit()
+    def send_message(message):
+        bot = telegram.Bot(token='6289548429:AAFcVzfljxgtHZR7DDlEjo4fDNlVPB4qMp4')
+        chat_id = '-1001814445707'  
+        bot.send_message(chat_id=chat_id, text=message)
 
-        self.tree.item(selected_item, text=name, values=(
-            start_date, end_date, "Active"))
-        self.start_timer(end_date, name)
+    def check_expiration(self):
+        now = datetime.datetime.now().strftime("%Y-%m-%d")
+        for product in self.products:
+            if now >= product.end_date:
+                self.tree.insert("", "end", text=product.name, values=(product.start_date, product.end_date, "Expired"))
+                send_message(f"{product.name} has expired on {product.end_date}")
+            else:
+                self.tree.insert("", "end", text=product.name, values=(product.start_date, product.end_date, "Not expired"))
 
-    def load_data(self):
-        data = pd.read_sql_query("SELECT * FROM products", self.conn)
-        for index, row in data.iterrows():
-            self.products.append(
-                {"name": row["name"], "start": row["start_date"], "end": row["end_date"]})
-            self.tree.insert("", "end", text=row["name"], values=(
-                row["start_date"], row["end_date"], row["status"]))
-            self.start_timer(row["end_date"], row["name"])
-
-    def start_timer(self, end_date, name):
-        now = time.time()
-        end_time = time.mktime(time.strptime(end_date, "%d.%m.%Y"))
-
-        if end_time > now:
-            self.timer = self.after(
-                int((end_time - now) * 1000), self.send_notification, name)
-
-    def send_notification(self, name):
-        self.telegram_bot.send_message(
-            chat_id=self.telegram_chat_id, text=f"{name} SKT geçti")
-        self.cursor.execute(
-            "UPDATE products SET status='Expired' WHERE name=?", (name,))
-        self.conn.commit()
-
-    def refresh(self):
-        self.after(10000, self.refresh)
-
-        img = cv2.imread("<image_path>")
-        text = pytesseract.image_to_string(img)
-        data = text.split("\n")
-
-        for item in data:
-            item_data = item.split(" ")
-            name = item_data[0]
-            end_date = item_data[1]
-            self.cursor.execute(
-                "UPDATE products SET end_date=? WHERE name=?", (end_date, name))
-            self.conn.commit()
-
-            for product in self.products:
-                if product["name"] == name:
-                    product["end"] = end_date
-                    self.tree.item(product, values=(
-                        product["start"], product["end"], "Active"))
-                    break
-
-        self.start_timer(end_date, name)
-
-
-app = Application()
-app.after(0, app.refresh)
+root = tk.Tk()
+app = Application(master=root)
 app.mainloop()
