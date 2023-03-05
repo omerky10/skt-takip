@@ -8,8 +8,9 @@ import tracemalloc
 import logging
 import requests
 import telebot
-
+from telebot.types import Message
 tracemalloc.start()
+
 
 class App(tk.Tk):
     def __init__(self):
@@ -24,7 +25,8 @@ class App(tk.Tk):
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Scrollbar
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self.tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
@@ -52,31 +54,37 @@ class App(tk.Tk):
         self.expiration_entry.pack()
 
         # Buttons
-        self.add_button = tk.Button(self, text="Ekle", command=self.add_product)
+        self.add_button = tk.Button(
+            self, text="Ekle", command=self.add_product)
         self.add_button.pack(side=tk.LEFT, padx=5)
 
-        self.edit_button = tk.Button(self, text="Düzenle", command=self.edit_product)
+        self.edit_button = tk.Button(
+            self, text="Düzenle", command=self.edit_product)
         self.edit_button.pack(side=tk.LEFT, padx=5)
 
-        self.delete_button = tk.Button(self, text="Sil", command=self.delete_product)
+        self.delete_button = tk.Button(
+            self, text="Sil", command=self.delete_product)
         self.delete_button.pack(side=tk.LEFT, padx=5)
 
-        self.refresh_button = tk.Button(self, text="Yenile", command=self.refresh_products)
+        self.refresh_button = tk.Button(
+            self, text="Yenile", command=self.refresh_products)
         self.refresh_button.pack(side=tk.LEFT, padx=5)
-        
-        self.Bot_run = tk.Button(self,text="Botu Çalıştır", command=self.Take)
+
+        self.Bot_run = tk.Button(self, text="Botu Çalıştır", command=self.Take)
         self.Bot_run.pack(side=tk.LEFT, padx=5)
-        
+
         self.file_path = "products.pickle"  # dosya yolunu belirleyin
         try:
             with open(self.file_path, "rb") as f:
                 self.products = pickle.load(f)
         except FileNotFoundError:
             self.products = []
-            
+
         self.load_products()
+
     def Take(self):
-        self.botTake = telebot.TeleBot("6289548429:AAFcVzfljxgtHZR7DDlEjo4fDNlVPB4qMp4")
+        self.botTake = telebot.TeleBot(
+            "6289548429:AAFcVzfljxgtHZR7DDlEjo4fDNlVPB4qMp4")
 
         # Tarih formatı
         self.DATE_FORMAT = "%d/%m/%Y"
@@ -90,13 +98,15 @@ class App(tk.Tk):
         def start_processing_messages(message):
             global processing_messages
             processing_messages = True
-            self.botTake.reply_to(message, "Mesajları kaydetmeye başladım.")
+            self.botTake.reply_to(
+                message, "Hoşgeldin . Mesajları kaydetmeye başladım.")
 
         @self.botTake.message_handler(commands=['quit'])
         def stop_processing_messages(message):
             global processing_messages
             processing_messages = False
             self.botTake.reply_to(message, "Mesajları kaydetmeyi bıraktım.")
+            self.botTake.stop_polling()
 
         @self.botTake.message_handler(func=lambda message: processing_messages)
         def handle_message(message):
@@ -109,46 +119,72 @@ class App(tk.Tk):
             name, expiration_date = message_parts
             # Tarih formatını kontrol et
             try:
-                datetime.strptime(expiration_date, self.DATE_FORMAT)
+                expiration_date = datetime.strptime(
+                    expiration_date, self.DATE_FORMAT).date()
+                expiration_date = expiration_date.strftime('%d/%m/%Y')
             except ValueError:
                 self.botTake.reply_to(
                     message, "Hatalı tarih formatı! Lütfen tarihi dd/mm/yyyy formatında girin.")
                 return
-                # pickle dosyasını yükle veya boş bir liste oluştur
+
+            # pickle dosyasını yükle veya boş bir liste oluştur
             try:
-                with open('products.pickle', 'rb') as f:
+                with open(self.file_path, 'rb') as f:
                     messages = pickle.load(f)
             except EOFError:
                 messages = []
-            
-            # yeni mesajları mevcut verilere ekle
-            message_dict = {"name": name, "expiration_date": expiration_date}
-            messages.append(message_dict)
 
-            # mevcut ve yeni verileri pickle dosyasına kaydet
-            with open("products.pickle", "wb") as f:
-                pickle.dump(messages, f)
-                # Pickle dosyasına kaydet
-                with open("products.pickle", "wb") as f:
+            # Name kontrolü yap ve tarih kontrolü yap
+            updated = False
+            for message in messages:
+                if message['name'] == name:
+                    # SKT bilgisini kontrol et ve gerekirse güncelle
+                    if message.get('expiration_date') is not None and message.get('expiration_date') != 'SKT Girdi':
+                        try:
+                            expiration_date_string = str(
+                                message['expiration_date'])
+                            expiration_date_in_file = datetime.strptime(
+                                expiration_date_string, self.DATE_FORMAT).date()
+                            if (expiration_date_in_file - datetime.now().date()).days < 0:
+                                message['status'] = 'SKT girdi'
+                            else:
+                                message['status'] = 'SKT Bekleniyor'
+                        except ValueError:
+                            pass
+                    # Tarihi güncelle
+                    message['expiration_date'] = expiration_date
+                    updated = True
+
+            # Eğer güncelleme yapıldıysa, verileri dosyaya kaydet
+            if updated:
+                with open(self.file_path, "wb") as f:
                     pickle.dump(messages, f)
+            else:
+                # Yeni mesajı ekle
+                message_dict = {
+                    "name": name, "expiration_date": expiration_date}
+                messages.append(message_dict)
                 # Mesajı ekrana yazdır
                 print(message_dict)
+                with open(self.file_path, "wb") as f:
+                    pickle.dump(messages, f)
 
-        # pickle dosyasını yükle
-        with open(self.file_path, 'rb') as f:
-            veriler = pickle.load(f)
         # Botu çalıştırın
         self.botTake.polling()
-    def send_message(self ,text):
+
+    def send_message(self, text):
         bot_token = "6289548429:AAFcVzfljxgtHZR7DDlEjo4fDNlVPB4qMp4"
         chat_id = "-1001814445707"
-        send_text = 'https://api.telegram.org/bot' + bot_token + '/sendMessage?chat_id=' + chat_id + '&parse_mode=Markdown&text=' + text
+        send_text = 'https://api.telegram.org/bot' + bot_token + \
+            '/sendMessage?chat_id=' + chat_id + '&parse_mode=Markdown&text=' + text
         print(send_text)
         response = requests.get(send_text)
         return response.json()
+
     def save_products(self):
         with open(self.file_path, "wb") as f:
             pickle.dump(self.products, f)
+
     def load_products(self):
         self.tree.delete(*self.tree.get_children())
         for product in self.products:
@@ -156,35 +192,43 @@ class App(tk.Tk):
             expiration_date_str = str(product["expiration_date"])
             status = ""
             try:
-                expiration_date = datetime.strptime(expiration_date_str, "%d/%m/%Y").date()
+                expiration_date = datetime.strptime(
+                    expiration_date_str, "%d/%m/%Y").date()
                 if (expiration_date - datetime.now().date()).days < 0:
                     status = f"{name} - SKT Girdi"
                     self.send_message(f'Ürün {name} SKT Girdi')
             except ValueError:
                 pass
-            self.tree.insert("", tk.END, text="", values=(name, expiration_date_str, status))
+            self.tree.insert("", tk.END, text="", values=(
+                name, expiration_date_str, status))
+
     def add_product(self):
         name = self.name_entry.get().strip()
         expiration_date_str = self.expiration_entry.get().strip()
         try:
-            expiration_date = datetime.strptime(expiration_date_str, "%d/%m/%Y").date()
+            expiration_date = datetime.strptime(
+                expiration_date_str, "%d/%m/%Y").date()
             status = ""
             if (expiration_date - datetime.now().date()).days < 0:
                 status = f"{name} - SKT Girdi"
-            selected_item_data = {"name": name, "expiration_date": expiration_date_str, "status": status}
+            selected_item_data = {
+                "name": name, "expiration_date": expiration_date_str, "status": status}
             # load products from file
             with open("products.pickle", "rb") as f:
                 existing_products = pickle.load(f)
-            
+
             # check if the selected product already exists
             for product in existing_products:
-                if product["name"] == name :
-                    tk.messagebox.showerror("Hata","Bu ürün zaten kaydedilmiş!")
+                if product["name"] == name:
+                    tk.messagebox.showerror(
+                        "Hata", "Bu ürün zaten kaydedilmiş!")
             self.products.append(selected_item_data)
             self.load_products()
             self.save_products()
         except ValueError:
-            tk.messagebox.showerror("Hata", "Lütfen geçerli bir SKT girin (gg/aa/yyyy) veya bu ürün listenizde mevcud.")
+            tk.messagebox.showerror(
+                "Hata", "Lütfen geçerli bir SKT girin (gg/aa/yyyy) veya bu ürün listenizde mevcud.")
+
     def delete_product(self):
         selected_item = self.tree.selection()
         if len(selected_item) == 0:
@@ -196,7 +240,8 @@ class App(tk.Tk):
         selected_item_data = self.products[selected_item_id]
 
         # ask for confirmation before deleting the item
-        confirm = tk.messagebox.askyesno("Silmek istediğinizden emin misiniz?", f"{selected_item_data['name']} ürününü silmek istediğinizden emin misiniz?")
+        confirm = tk.messagebox.askyesno("Silmek istediğinizden emin misiniz?",
+                                         f"{selected_item_data['name']} ürününü silmek istediğinizden emin misiniz?")
 
         if confirm:
             # delete the item from the products list
@@ -205,6 +250,7 @@ class App(tk.Tk):
             # refresh the treeview
             self.load_products()
             self.save_products()  # save changes to file
+
     def refresh_products(self):
         # reload the products from file
         try:
@@ -213,7 +259,8 @@ class App(tk.Tk):
         except FileNotFoundError:
             self.products = []
 
-        self.load_products()       
+        self.load_products()
+
     def edit_product(self):
         # get the selected item
         selected_item = self.tree.selection()
@@ -247,7 +294,8 @@ class App(tk.Tk):
             name = name_entry.get().strip()
             expiration_date_str = expiration_entry.get().strip()
             try:
-                expiration_date = datetime.strptime(expiration_date_str, "%d/%m/%Y").date()
+                expiration_date = datetime.strptime(
+                    expiration_date_str, "%d/%m/%Y").date()
                 status = ""
                 if (expiration_date - datetime.now().date()).days < 0:
                     status = f"{name} - SKT Girdi"
@@ -258,10 +306,13 @@ class App(tk.Tk):
                 self.save_products()
                 edit_window.destroy()
             except ValueError:
-                tk.messagebox.showerror("Hata", "Lütfen geçerli bir SKT girin (gg/aa/yyyy).")
+                tk.messagebox.showerror(
+                    "Hata", "Lütfen geçerli bir SKT girin (gg/aa/yyyy).")
 
-        save_button = tk.Button(edit_window, text="Kaydet", command=save_changes)
+        save_button = tk.Button(
+            edit_window, text="Kaydet", command=save_changes)
         save_button.pack(pady=10)
+
 
 if __name__ == "__main__":
     app = App()
