@@ -225,6 +225,8 @@ class App(tk.Tk):
             self.products.append(selected_item_data)
             self.load_products()
             self.save_products()
+            self.name_entry.delete(0, tk.END)
+            self.expiration_entry.delete(0, tk.END)
         except ValueError:
             tk.messagebox.showerror(
                 "Hata", "Lütfen geçerli bir SKT girin (gg/aa/yyyy) veya bu ürün listenizde mevcud.")
